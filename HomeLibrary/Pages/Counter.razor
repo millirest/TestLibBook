@@ -1,0 +1,18 @@
+﻿@page "/counter"
+
+<PageTitle>Counter</PageTitle>
+
+<h1>Антистресс</h1>
+
+<p role="status">Уровень стресса: @currentCount лвл</p>
+
+<button class="btn btn-primary" @onclick="IncrementCount">-1 Стресс</button>
+
+@code {
+    private int currentCount = 99999;
+
+    private void IncrementCount()
+    {
+        currentCount--;
+    }
+}

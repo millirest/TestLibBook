@@ -1,0 +1,222 @@
+﻿@page "/"
+@using HomeLibrary.Data
+@using Microsoft.EntityFrameworkCore
+@inject LibraryDbContext DbContext
+@* @inject IHttpClientFactory HttpClientFactory *@
+
+<PageTitle>Index</PageTitle>
+
+<h1>Здесь список всех книг</h1>
+
+@if (books == null)
+{
+    <p><em>Загрузка...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Обложка</th>
+                <th>Название</th>
+                <th>Автор</th>
+                <th>Жанр</th>
+                <th>Путь</th>
+                <th>Действия</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var book in books)
+            {
+                <tr>
+                    <td>
+                        @* <BookCover Path="@book.Path" /> *@
+                    </td>
+                    @if (editBook != null && editBook.Id == book.Id)
+                    {
+                        <td><InputText class="form-control" @bind-Value="editBook.Title" /></td>
+                        <td><InputText class="form-control" @bind-Value="editBook.Author" /></td>
+                        <td><InputText class="form-control" @bind-Value="editBook.Genre" /></td>
+                        <td><InputText class="form-control" @bind-Value="editBook.Path" /></td>
+                        <td>
+                            <button class="btn btn-success btn-sm me-1" @onclick="() => SaveEdit(book.Id)">Сохранить</button>
+                            <button class="btn btn-secondary btn-sm" @onclick="CancelEdit">Отмена</button>
+                        </td>
+                    }
+                    else
+                    {
+                        <td>@book.Title</td>
+                        <td>@book.Author</td>
+                        <td>@book.Genre</td>
+                        <td>
+                            <a href="@book.Path" target="_blank">@book.Path</a>
+                        </td>
+                        <td>
+                            <button class="btn btn-primary btn-sm me-1" @onclick="() => StartEdit(book)">Редактировать</button>
+                            <button class="btn btn-danger btn-sm" @onclick="() => ConfirmDelete(book)">Удалить</button>
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (showDeleteConfirm && bookToDelete != null)
+{
+    <div>
+        <div class="modal show d-block" tabindex="-1" style="display:block;">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Подтвердите удаление</h5>
+                    </div>
+                    <div class="modal-body">
+                        <p>Вы уверены, что хотите удалить книгу <b>@bookToDelete.Title</b>?</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-danger" @onclick="DeleteBook">Удалить</button>
+                        <button class="btn btn-secondary" @onclick="CancelDelete">Отмена</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    </div>
+}
+
+@if (successMessage != null)
+{
+    <div class="alert alert-success mt-3">@successMessage</div>
+}
+
+@code {
+    private List<Book>? books;
+    private string? successMessage;
+
+    // For editing
+    private Book? editBook;
+
+    // For deleting
+    private bool showDeleteConfirm = false;
+    private Book? bookToDelete;
+
+    // Cache for cover images
+    private Dictionary<string, string> coverCache = new();
+
+    // Task load books from the database
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBooks();
+    }
+    
+    // Method to load books from the database
+    private async Task LoadBooks()
+    {
+        books = await DbContext.Books.ToListAsync();
+        if (books == null || books.Count == 0)
+        {
+            successMessage = "Нет книг для загрузки.";
+        }
+        else
+        {
+            successMessage = null;
+        }
+    }
+
+    private void StartEdit(Book book)
+    {
+        // Create a copy to avoid editing the list directly
+        editBook = new Book
+        {
+            Id = book.Id,
+            Title = book.Title,
+            Author = book.Author,
+            Genre = book.Genre,
+            Path = book.Path
+        };
+    }
+
+    private void CancelEdit()
+    {
+        editBook = null;
+    }
+
+    private async Task SaveEdit(int id)
+    {
+        var book = await DbContext.Books.FindAsync(id);
+        if (book != null && editBook != null)
+        {
+            book.Title = editBook.Title;
+            book.Author = editBook.Author;
+            book.Genre = editBook.Genre;
+            book.Path = editBook.Path;
+            await DbContext.SaveChangesAsync();
+
+        }
+        editBook = null;
+        await LoadBooks();
+    }
+
+    private void ConfirmDelete(Book book)
+    {
+        bookToDelete = book;
+        showDeleteConfirm = true;
+    }
+
+    private void CancelDelete()
+    {
+        showDeleteConfirm = false;
+        bookToDelete = null;
+    }
+
+    private async Task DeleteBook()
+    {
+        if (bookToDelete != null)
+        {
+            DbContext.Books.Remove(bookToDelete);
+            await DbContext.SaveChangesAsync();
+            successMessage = $"Книга \"{bookToDelete.Title}\" удалена!";
+        }
+        showDeleteConfirm = false;
+        bookToDelete = null;
+        await LoadBooks();
+    }
+
+    @* private async Task<string?> GetCoverUrlAsync(string bookUrl)
+    {
+        if (string.IsNullOrWhiteSpace(bookUrl))
+            return null;
+
+        if (coverCache.TryGetValue(bookUrl, out var cached))
+            return cached;
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient();
+            var html = await client.GetStringAsync(bookUrl);
+
+            var doc = new HtmlAgilityPack.HtmlDocument();
+            doc.LoadHtml(html);
+
+            var imgNode = doc.DocumentNode.SelectSingleNode("//*[@itemprop='image']");
+            var imgUrl = imgNode?.GetAttributeValue("src", null);
+
+            // If the image URL is relative, make it absolute
+            if (!string.IsNullOrEmpty(imgUrl) && !Uri.IsWellFormedUriString(imgUrl, UriKind.Absolute))
+            {
+                var baseUri = new Uri(bookUrl);
+                imgUrl = new Uri(baseUri, imgUrl).ToString();
+            }
+
+            if (imgUrl != null)
+                coverCache[bookUrl] = imgUrl;
+
+            return imgUrl;
+        }
+        catch
+        {
+            return null;
+        }
+    } *@
+}

@@ -1,0 +1,54 @@
+@page "/check-db"
+@using HomeLibrary.Data
+@using Microsoft.EntityFrameworkCore
+@inject LibraryDbContext DbContext
+
+<h3>Проверка подключения к базе данных</h3>
+
+@if (isChecking)
+{
+    <p>Проверка подключения...</p>
+}
+else if (success)
+{
+    <div class="alert alert-success">
+        Успешное подключение! Пример книги: <b>@firstBookTitle</b>
+    </div>
+}
+else
+{
+    <div class="alert alert-danger">
+        Ошибка подключения: @errorMessage
+    </div>
+}
+
+@code {
+    private bool isChecking = true;
+    private bool success = false;
+    private string? errorMessage;
+    private string? firstBookTitle;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var book = await DbContext.Books.FirstOrDefaultAsync();
+            if (book != null)
+            {
+                firstBookTitle = book.Title;
+                success = true;
+            }
+            else
+            {
+                firstBookTitle = "Нет книг в базе данных";
+                success = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            success = false;
+        }
+        isChecking = false;
+    }
+}
